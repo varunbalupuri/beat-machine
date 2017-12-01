@@ -57,6 +57,25 @@ def convert_mp3_to_wav_file(mp3_file):
     return wav_file
 
 
+# def download_all_beets_tracks():
+#     """Download all beets tracks with a non-zero BPM.
+#     """
+#     # see <http://beets.readthedocs.io/en/v1.4.5/reference/query.html#query-term-negation>
+#     beets_tracks_with_bpm = requests.get(BEETS_API_ROOT + 'query/^bpm:0').json()['results']
+#     for track in beets_tracks_with_bpm:
+#         beets_track_url = BEETS_API_ROOT + str(track['id'])
+#         bpm = track['bpm']
+#         file_format = ['format']
+#         audio_file = download_beets_track_file(beets_track_url)
+#         if file_format != 'WAV':
+#             if file_format == 'MP3':
+#                 wav_file = convert_mp3_to_wav_file(audio_file)
+#                 audio_file.close()
+#                 audio_file = wav_file   # switcheroo
+#         TEST_WAVS_DIRECTORY.joinpath('%s.wav', track['id']).write_bytes(audio_file.read())
+#         audio_file.close()
+
+
 def main(beets_ids):
     """Downloads a batch of tracks from server in WAV format.
 
