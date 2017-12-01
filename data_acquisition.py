@@ -1,117 +1,89 @@
-import logging
-
-import requests
-import os
-import io
-import json
-
-from pydub import AudioSegment
-
-logger = logging.getLogger(__name__)
-
-
-############################################
-#  Grab and save the song from cpt-hammer  #
-############################################
-
 """
-This script downloads tracks with valid metadata in batches
+This script downloads tracks with valid metadata in batches from captain-hammer.
 
 Raw wav files created are then used with feature_extraction.py
-and deleted to conserve disk space.
-
 """
+import logging
+from pathlib import Path
+from tempfile import TemporaryFile
 
-# CHANGE ME!!
-MP3_FOLDER = '/home/vaz/projects/BeePeeM/test_data/beets/mp3s/'
-WAV_FOLDER = '/home/vaz/projects/BeePeeM/test_data/beets/wavs/'
+import requests
+import sys
+from pydub import AudioSegment
+
+
+# logging configuration
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+stdout_log_handler = logging.StreamHandler(sys.stdout)
+stdout_log_handler.setLevel(logging.DEBUG)
+logger.addHandler(stdout_log_handler)
+
 BEETS_API_ROOT = 'http://beets.westerndecadence.com/item/'
+TEST_WAVS_DIRECTORY = Path.cwd().joinpath('data/test/wavs/')
 
 
-def get_metadata_tags(beets_id):
+def get_beets_track_bpm_and_format_tags(beets_track_url):
     """ Downloads metadata for a given track id from server and extracts bpm and format data.
 
     Args: beets_id (int or str) : numeric character correspoding to the track's id on server
     Returns: format (str) : the file format of the track.
              bpm (int) : the int floored bpm of the track
     """
-    beets_id = str(beets_id)
-    r = requests.get(url=BEETS_API_ROOT + beets_id)
-    metadata = json.loads(r.content)
-    bpm = metadata.get('bpm', 0)
-    file_format = metadata.get('format', 0)
-    if not file_format:
-        print('no valid file format found for id: ' + beets_id)
-        return None
-    if not bpm:
-        print('no valid bpm found for id: ' + beets_id)
-        return None
-    return int(bpm), file_format.lower()
+    logger.info('Getting beets track <%s> metadata…', beets_track_url)
+    metadata = requests.get(beets_track_url).json()
+    bpm = int(metadata.get('bpm', 0)) or None
+    file_format = metadata.get('format', '').lower() or None
+    return bpm, file_format
 
 
-def beets_save_mp3(beets_id, path_to_save_to=MP3_FOLDER):
-    """Downloads file id from server and saves to path_to_save_to.
-
-    Args: beets_if (int or str) : numeric character correspoding to the track's id on server
-    Returns path_to_save_to (str) : full path of downloaded mp3 file.
+def download_beets_track_file(beets_track_url):
+    """Downloads the beets track audio and returns a temporary file handle.
     """
-    beets_id = str(beets_id)
-    path_to_save_to = path_to_save_to + beets_id + '.mp3'
-    song_url = BEETS_API_ROOT + beets_id + '/file'
-    a = requests.get(song_url)
-    bytes_data = a.content
-    with open(path_to_save_to, 'wb') as f:
-        f.write(bytes_data)
-    print('beets track id: ' + beets_id + ' saved MP3 to : ' + path_to_save_to)
-    return path_to_save_to
+    logger.info('Downloading beets track <%s> audio file…', beets_track_url)
+    f = TemporaryFile()
+    f.write(requests.get(beets_track_url + '/file').content)
+    f.seek(0)   # in case we want to read this later
+    return f
 
 
-def beets_save_wav(beets_id, path_to_save_to=WAV_FOLDER):
-    beets_id = str(beets_id)
-    path_to_save_to = path_to_save_to + beets_id + '.wav'
-    song_url = BEETS_API_ROOT + beets_id + '/file'
-    a = requests.get(song_url)
-    bytes_data = a.content
-    with open(path_to_save_to, 'wb') as f:
-        f.write(bytes_data)
-    print('beets track id: ' + beets_id + ' saved WAV to : ' + path_to_save_to)
-    return path_to_save_to
-
-
-def mp3_to_wav(song_id, mp3_path, wav_folder=WAV_FOLDER):
+def convert_mp3_to_wav_file(mp3_file):
     """Converts downloaded mp3 to wav and deletes mp3."""
-    song_id = str(song_id)
-    mp3_data = open(mp3_path, 'rb').read()
-    sound = AudioSegment.from_mp3(io.BytesIO(mp3_data))
-    path_to_save = WAV_FOLDER + song_id + '.wav'
-    sound.export(path_to_save, format="wav")
-    # remove the mp3 file
-    os.remove(mp3_path)
-    print('Converted id: ' + song_id + ' to WAV, saved at : ' + path_to_save)
+    logger.debug('Converting %s to WAV…', mp3_file)
+    sound = AudioSegment.from_mp3(mp3_file)
+    wav_file = TemporaryFile()
+    sound.export(wav_file, format="wav")
+    wav_file.seek(0)
+    return wav_file
 
 
-def main(id_list):
-    """Downloads a batch of tracks from server.
+def main(beets_ids):
+    """Downloads a batch of tracks from server in WAV format.
 
-    If the track is in wav format, directly save, if it is mp3, convert and save.
-        
     Downloads metadata and checks for bpm tag and format.
     If bpm tag does not exist/is zero, track is not downloaded.
+    If track is not in WAV format, convert to it first.
 
     Args (list[str]) : list of id's to download from server
     """
-    for beets_id in id_list:
-        tags = get_metadata_tags(beets_id)
-        if tags is None:
+    for beets_id in beets_ids:
+        beets_track_url = BEETS_API_ROOT + str(beets_id)
+        bpm, file_format = get_beets_track_bpm_and_format_tags(beets_track_url)
+        if not bpm or not file_format:
+            logger.warning('No BPM/file format for <%s> (bpm=%s, format=%s).', beets_track_url, bpm, file_format)
             continue
-        bpm, file_format = tags
-        print(bpm, file_format)
+        logger.debug('Beets track <%s> has bpm=%s, format=%s.', beets_track_url, bpm, file_format)
         if file_format == 'mp3':
-            mp3_path = beets_save_mp3(beets_id)
-            mp3_to_wav(beets_id, mp3_path)
+            mp3_file = download_beets_track_file(beets_track_url)
+            wav_file = convert_mp3_to_wav_file(mp3_file)
+            mp3_file.close()    # TemporaryFile gets deleted on close
         elif file_format == 'wav':
-            beets_save_wav(beets_id)
+            wav_file = download_beets_track_file(beets_track_url)
 
+        # TODO: pass file handle directly to next program
+        # copy WAV data to TEST_WAVS_DIRECTORY
+        TEST_WAVS_DIRECTORY.joinpath('%s.wav' % beets_id).write_bytes(wav_file.read())
+        wav_file.close()    # remember to close TemporaryFile for deletion
 
 '''
 def wav_to_array(directory, Xdim):
