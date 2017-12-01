@@ -4,11 +4,11 @@ This script downloads tracks with valid metadata in batches from captain-hammer.
 Raw wav files created are then used with feature_extraction.py
 """
 import logging
+import sys
 from pathlib import Path
 from tempfile import TemporaryFile
 
 import requests
-import sys
 from pydub import AudioSegment
 
 
