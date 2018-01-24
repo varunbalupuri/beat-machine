@@ -137,7 +137,7 @@ class DataProcessor(object):
         if mean_normalize:
             X -= X.mean()
 
-        X = overlap(X, fftsize, step)
+        X = self.overlap(X, fftsize, step)
         
         size = fftsize
         win = 0.54 - .46 * np.cos(2 * np.pi * np.arange(size) / (size - 1))
@@ -145,7 +145,8 @@ class DataProcessor(object):
         X = local_fft(X)[:, :cut]
         return X
 
-    def pretty_spectrogram(self, data, log = True, thresh= 5, fft_size = 512, step_size = 64):
+    def pretty_spectrogram(self, data, log = True, thresh= 5, 
+                           fft_size = 512, step_size = 64):
         """
         Creates a spectrogram
         Args:
@@ -155,7 +156,8 @@ class DataProcessor(object):
         Returns:
             (np.array) Spectrogram representation of audio
         """
-        specgram = np.abs(self.stft(data, fftsize=fft_size, step=step_size, real=False, compute_onesided=True))
+        specgram = np.abs(self.stft(data, fftsize=fft_size,
+                          step=step_size, real=False, compute_onesided=True))
       
         if log == True:
             specgram /= specgram.max() # volume normalize to max 1
@@ -194,7 +196,7 @@ class DataProcessor(object):
         melpoints = np.linspace(lowmel,highmel,nfilt+2)
         # our points are in Hz, but we use fft bins, so we have to convert
         #  from Hz to fft bin number
-        bin = np.floor((nfft+1)*self._mel2hz(melpoints)/samplerate)
+        bin = np.floor((nfft+1)*self._mel_to_hz(melpoints)/samplerate)
 
         fbank = np.zeros([nfilt,nfft//2])
         for j in range(0,nfilt):
@@ -209,7 +211,7 @@ class DataProcessor(object):
         """
         Creates a filter to convolve with the spectrogram to get out mels
         """
-        mel_inversion_filter = get_filterbanks(nfilt=n_freq_components, 
+        mel_inversion_filter = self.get_filterbanks(nfilt=n_freq_components, 
                                                nfft=fft_size, samplerate=samplerate, 
                                                lowfreq=start_freq, highfreq=end_freq)
         # Normalize filter
@@ -228,12 +230,12 @@ class DataProcessor(object):
     def mel_spectrogram(self):
         """Generates training data in the form of mel spectrogram
         """
-        mel_filter, mel_inversion_filter = create_mel_filter(fft_size = fft_size,
-                                                        n_freq_components = n_mel_freq_components,
-                                                        start_freq = start_freq,
-                                                        end_freq = end_freq)
+        mel_filter, mel_inversion_filter = self.create_mel_filter(fft_size = self.fft_size,
+                                                        n_freq_components = self.n_mel_freq_components,
+                                                        start_freq = self.start_freq,
+                                                        end_freq = self.end_freq)
 
-        mel_spec = make_mel(wav_spectrogram, mel_filter, shorten_factor = shorten_factor)
+        mel_spec = self.make_mel(self.spectrogram, mel_filter)
 
         return mel_spec
 
@@ -284,69 +286,6 @@ class DataProcessor(object):
 
 
 if __name__ == '__main__':
-
-    '''
-    ### Parameters ###
-    fft_size = 2048 # window size for the FFT
-    step_size = fft_size/16 # distance to slide along the window (in time)
-    spec_thresh = 4 # threshold for spectrograms (lower filters out more noise)
-    lowcut = 500 # Hz # Low cut for our butter bandpass filter
-    highcut = 15000 # Hz # High cut for our butter bandpass filter
-    # For mels
-    n_mel_freq_components = 64 # number of mel frequency channels
-    shorten_factor = 10 # how much should we compress the x-axis (time)
-    start_freq = 300 # Hz # What frequency to start sampling our melS from 
-    end_freq = 8000 # Hz # What frequency to stop sampling our melS from 
-
-    # Grab your wav and filter it
-    mywav = '/home/vaz/projects/beat-machine/data/test/wavs/30_132.wav'
-    rate, data = wavfile.read(mywav)
-    data = butter_bandpass_filter(data, rate, order=1)
-    # Only use a short clip for our demo
-    if np.shape(data)[0]/float(rate) > 10:
-        data = data[0:rate*10] 
-    print('Length in time (s): ', np.shape(data)[0]/float(rate))
-
-
-    wav_spectrogram = pretty_spectrogram(data.astype('float64'), fft_size = fft_size, 
-                                   step_size = step_size, log = True, thresh = spec_thresh)
-
-    print(wav_spectrogram)
-    print(type(wav_spectrogram))
-
-    fig, ax = plt.subplots(nrows=1,ncols=1, figsize=(20,4))
-    cax = ax.matshow(np.transpose(wav_spectrogram), interpolation='nearest', aspect='auto', cmap=plt.cm.afmhot, origin='lower')
-    fig.colorbar(cax)
-    plt.title('Original Spectrogram')
-
-    #plt.savefig('spec_vs_mel/'+filename+'.png')
-
-    plt.show()
-
-    plt.clf()
-
-    mel_filter, mel_inversion_filter = create_mel_filter(fft_size = fft_size,
-                                                        n_freq_components = n_mel_freq_components,
-                                                        start_freq = start_freq,
-                                                        end_freq = end_freq)
-
-    mel_spec = make_mel(wav_spectrogram, mel_filter, shorten_factor = shorten_factor)
-
-
-    print(mel_spec)
-    print(type(mel_spec))
-
-    # plot the compressed spec
-    fig, ax = plt.subplots(nrows=1,ncols=1, figsize=(20,4))
-
-    cax = ax.matshow(mel_spec, interpolation='nearest', aspect='auto', cmap=plt.cm.afmhot, origin='lower')
-    fig.colorbar(cax)
-    plt.title('mel Spectrogram')
-
-    plt.show()
-
-
-    '''
 
     filepath = '/home/vaz/projects/beat-machine/data/test/wavs/30_132.wav'
     PATH_TO_SAVE = '/home/vaz/projects/beat-machine/data/test/img/'
