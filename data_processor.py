@@ -1,12 +1,20 @@
-
 import numpy as np
 import matplotlib.pyplot as plt
+import sys
 import copy
 from scipy.io import wavfile
 from scipy.signal import butter, lfilter
+import scipy.signal as sps
 import scipy.ndimage
 import audioop
 import logging
+import os
+import shutil
+
+import wave
+
+logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 
 class DataProcessor(object):
@@ -18,7 +26,7 @@ class DataProcessor(object):
     methods
     """
 
-    def __init__(self, filepath, n_secs=10, lowcut=500, highcut=15000,
+    def __init__(self, filepath, lowcut=500, highcut=15000,
                  fft_size=2048, spec_thresh=4, n_freq_components=64,
                  shorten_factor=10, start_freq=300,
                  end_freq=8000, samplerate=16000):
@@ -27,7 +35,6 @@ class DataProcessor(object):
             # Required #
             filepath (str) : the filepath of the audio file (wav)
             # Optional #
-            n_secs (float) : The number of seconds to sample from any given file.
             lowcut (int) : Low cut - butter bandpass filter
             highcut (int) : High cut - butter bandpass filter
             fft_size (int) : window size for the FFT
@@ -38,7 +45,6 @@ class DataProcessor(object):
             end_freq (int) : Frequency to stop sampling our melS from
         """
         self.filepath = filepath
-        self.n_secs = n_secs
         self.lowcut = lowcut
         self.highcut = highcut
         self.fft_size = fft_size
@@ -48,22 +54,24 @@ class DataProcessor(object):
         self.shorten_factor = shorten_factor
         self.start_freq = start_freq
         self.end_freq = end_freq
-        self.samplerate= samplerate
+        self.samplerate = samplerate
 
-    # DOESNT WORK
-    def _downsample(self, data, inrate, outrate):
-        """ Downsamples data to have rate, `outrate`
+    def _downsample(self, out_rate):
+        """ Downsamples data at self.filepath to have rate, `outrate`
+        and writes data to to file with new downsampled rate. Neccesary
+        for dimensionality/complexity reduction in classification
+        Args:
+            out_rate (int) : the desired downsampled rate
         """
+        temp_filepath = 'downsample_{}_{}'.format(out_rate, self.filepath)
 
-        '''
-        in_wav = wave.open(in_filepath)
+        in_wav = wave.open(self.filepath)
+        logger.info('original rate is : %s', in_wav.getframerate())
 
-        #logger.info('original rate is : %s', in_wav.getframerate())
-
-        out_wav = wave.open(out_filepath, "w")
+        out_wav = wave.open(temp_filepath, "w")
         out_wav.setframerate(out_rate)
         out_wav.setnchannels(in_wav.getnchannels())
-        out_wav.setsampwidth (in_wav.getsampwidth())
+        out_wav.setsampwidth(in_wav.getsampwidth())
         out_wav.setnframes(1)
 
         if in_wav.getsampwidth() == 1:
@@ -74,7 +82,6 @@ class DataProcessor(object):
         in_rate = in_wav.getframerate()
         in_nframes = in_wav.getnframes()
 
-
         audio = in_wav.readframes(in_nframes)
         nroutsamples = round(len(audio) * out_rate/in_rate)
 
@@ -83,26 +90,46 @@ class DataProcessor(object):
 
         out_wav.writeframes(audio_out.copy(order='C'))
 
+        logger.info('written {} with rate {}'.format(temp_filepath, out_rate))
         out_wav.close()
-        '''
 
-    @property
-    def _load_data(self):
+        shutil.copy(temp_filepath, self.filepath)
+
+        logger.info('removing tempfile: {}'.format(temp_filepath))
+        os.remove(temp_filepath)
+
+        return out_rate
+
+    def load_data(self, rate, n_secs):
         """Loads a n_sec sample of the file
-        into instance attribtes, self.rate and self.data
+        into instance attribtes, downsamples and then
+        loads into self.rate and self.data
+        Args:
+            rate (int) : The desired rate with which to downsample the data to 
+            n_secs (float) : The number of seconds to sample from any given file.
+        Returns:
+            None
+        """
+        new_rate = self._downsample(rate)
+        logger.info('downsampling {} to {}'.format(self.filepath,new_rate))
+        self.rate, data = wavfile.read(self.filepath)
+        logger.info('rate read as: {}'.format(self.rate))
+        #load n_secs seconds of the track
+        data = data[:self.rate*n_secs]
+
+        self.data = data
+
+
+    def write_to_file_test(self, rate, data):
+        """ Writes data array to file at rate
         """
 
-        #if self.data is not None:
-        #    pass
-            #logger.warn('reloading data')
+        ##################################
+        # test- move to different module #
+        ##################################
+        wavfile.write('THIS_IS_A_TEST.wav', rate, data)
+        logger.debug('written to file')
 
-        # the tracklength in secs
-        #length_secs =  self.len(data)/self.rate
-
-        self.rate, self.data = wavfile.read(self.filepath)
-        print(self.rate)
-        new_data, new_rate = self._downsample(self.data, self.rate, 1000)
-        print(new_rate)
 
     def _hz_to_mel(self, hz):
         """
@@ -347,8 +374,10 @@ if __name__ == '__main__':
     PATH_TO_SAVE = '/home/vaz/projects/beat-machine/data/test/img/'
 
     filepath = 'F:/spectrogram/sample.wav'
+    filepath = 'sample.wav'
     PATH_TO_SAVE = 'F:/spectrogram/img/'
 
+    '''
     data_obj = DataProcessor(filepath=filepath)
 
     data_obj._load_data
@@ -358,7 +387,7 @@ if __name__ == '__main__':
     mel = data_obj.mel_spectrogram
 
     saved_to = data_obj.save_images(path_to_save=PATH_TO_SAVE)
-
+    
 
     print(spec)
     print(type(spec))
@@ -371,4 +400,13 @@ if __name__ == '__main__':
     print('\n')
 
     print('img saved to: ', saved_to)
+
+    '''
+
+    dp = DataProcessor(filepath = filepath)
+
+    dp.load_data(rate = 1000, n_secs = 3)
+
+
+    dp.write_to_file_test(dp.rate, dp.data)
 
