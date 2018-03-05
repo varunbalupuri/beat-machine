@@ -10,7 +10,6 @@ import audioop
 import logging
 import os
 import shutil
-
 import wave
 
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
@@ -55,6 +54,10 @@ class DataProcessor(object):
         self.start_freq = start_freq
         self.end_freq = end_freq
         self.samplerate = samplerate
+
+    ###############################
+    #  loading and augmentation   #
+    ###############################
 
     def _downsample(self, out_rate):
         """ Downsamples data at self.filepath to have rate, `outrate`
@@ -114,22 +117,30 @@ class DataProcessor(object):
         logger.info('downsampling {} to {}'.format(self.filepath,new_rate))
         self.rate, data = wavfile.read(self.filepath)
         logger.info('rate read as: {}'.format(self.rate))
-        #load n_secs seconds of the track
-        data = data[:self.rate*n_secs]
+
+        # should not be too close to start/end of song
+        # req_buffer seconds at start and end of track as no go zone
+        req_buffer = 5
+        buffer_zone = self.rate*(n_secs+req_buffer)
+        random_start = random.randint(buffer_zone, len(data)-buffer_zone)
+
+        data = data[random_start: self.rate*n_secs]
 
         self.data = data
 
-
-    def write_to_file_test(self, rate, data):
-        """ Writes data array to file at rate
+    def _add_noise(self, mu, sigma):
+        """Adds Gaussian noise to self.data
+        with params mean mu, std_dev sigma.
+        In the case of uniform noise, these are ignored
+        Args:
+            mu (float): mean of normal dist.
+            sigma (float): std dev of normal dist.
         """
+        if self.data is None:
+            raise Exception('data is not loaded, use load_data method')
 
-        ##################################
-        # test- move to different module #
-        ##################################
-        wavfile.write('THIS_IS_A_TEST.wav', rate, data)
-        logger.debug('written to file')
-
+        self.data = list(np.array(self.data) +
+                         np.random.normal(mu, sigma, len(data)))
 
     def _hz_to_mel(self, hz):
         """
@@ -409,4 +420,3 @@ if __name__ == '__main__':
 
 
     dp.write_to_file_test(dp.rate, dp.data)
-
