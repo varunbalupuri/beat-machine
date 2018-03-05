@@ -13,7 +13,6 @@ import shutil
 import wave
 
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
-logger = logging.getLogger(__name__)
 
 
 class DataProcessor(object):
@@ -28,7 +27,7 @@ class DataProcessor(object):
     def __init__(self, filepath, lowcut=500, highcut=15000,
                  fft_size=2048, spec_thresh=4, n_freq_components=64,
                  shorten_factor=10, start_freq=300,
-                 end_freq=8000, samplerate=16000):
+                 end_freq=8000, samplerate=16000, logger=None):
         """
         Args:
             # Required #
@@ -42,6 +41,7 @@ class DataProcessor(object):
             shorten_factor (int) : compression factor on the x-axis (time)
             start_freq (int) : Frequency to start sampling our melS from
             end_freq (int) : Frequency to stop sampling our melS from
+            logger : python logger - defaults to __name__ level logger.
         """
         self.filepath = filepath
         self.lowcut = lowcut
@@ -54,6 +54,22 @@ class DataProcessor(object):
         self.start_freq = start_freq
         self.end_freq = end_freq
         self.samplerate = samplerate
+        self.logger = logging.getLogger(__name__) or logger
+
+    def __getitem__(self, index):
+        return self.data[index]
+
+    def __repr__(self):
+        return 'DataProcessor for {}, cut at freqs {}/{}, \
+                downsampled to {}'.format(self.filepath, self.lowcut,
+                                          self.highcut, self.samplerate
+                                          )
+
+    def __eq__(self, other):
+        """loose equality condition, useful when instances of the same file
+        with variations in samplerate/augmentation exist
+        """
+        return self.filepath == other.filepath
 
     ###############################
     #  loading and augmentation   #
@@ -69,7 +85,7 @@ class DataProcessor(object):
         temp_filepath = 'downsample_{}_{}'.format(out_rate, self.filepath)
 
         in_wav = wave.open(self.filepath)
-        logger.info('original rate is : %s', in_wav.getframerate())
+        self.logger.info('original rate is : %s', in_wav.getframerate())
 
         out_wav = wave.open(temp_filepath, "w")
         out_wav.setframerate(out_rate)
@@ -93,34 +109,34 @@ class DataProcessor(object):
 
         out_wav.writeframes(audio_out.copy(order='C'))
 
-        logger.info('written {} with rate {}'.format(temp_filepath, out_rate))
+        self.logger.info('written {} with rate {}'.format(temp_filepath, out_rate))
         out_wav.close()
 
         shutil.copy(temp_filepath, self.filepath)
 
-        logger.info('removing tempfile: {}'.format(temp_filepath))
+        self.logger.info('removing tempfile: {}'.format(temp_filepath))
         os.remove(temp_filepath)
 
         return out_rate
 
-    def load_data(self, rate, n_secs):
+    def load_data(self, rate, n_secs, req_buffer=5):
         """Loads a n_sec sample of the file
         into instance attribtes, downsamples and then
         loads into self.rate and self.data
         Args:
             rate (int) : The desired rate with which to downsample the data to 
             n_secs (float) : The number of seconds to sample from any given file.
+            req_buffer (int) : Number of seconds to omit from possible sampling
+                               at the start and end of tracks
         Returns:
             None
         """
         new_rate = self._downsample(rate)
-        logger.info('downsampling {} to {}'.format(self.filepath,new_rate))
+        self.logger.info('downsampling {} to {}'.format(self.filepath,new_rate))
         self.rate, data = wavfile.read(self.filepath)
-        logger.info('rate read as: {}'.format(self.rate))
+        self.logger.info('rate read as: {}'.format(self.rate))
 
         # should not be too close to start/end of song
-        # req_buffer seconds at start and end of track as no go zone
-        req_buffer = 5
         buffer_zone = self.rate*(n_secs+req_buffer)
         random_start = random.randint(buffer_zone, len(data)-buffer_zone)
 
@@ -381,42 +397,14 @@ class DataProcessor(object):
 
 if __name__ == '__main__':
 
-    filepath = '/home/vaz/projects/beat-machine/data/test/wavs/30_132.wav'
+    FILEPATH = '/home/vaz/projects/beat-machine/data/test/wavs/30_132.wav'
     PATH_TO_SAVE = '/home/vaz/projects/beat-machine/data/test/img/'
 
-    filepath = 'F:/spectrogram/sample.wav'
-    filepath = 'sample.wav'
-    PATH_TO_SAVE = 'F:/spectrogram/img/'
 
-    '''
-    data_obj = DataProcessor(filepath=filepath)
-
-    data_obj._load_data
-
-    spec = data_obj.spectrogram
-
-    mel = data_obj.mel_spectrogram
-
-    saved_to = data_obj.save_images(path_to_save=PATH_TO_SAVE)
-    
-
-    print(spec)
-    print(type(spec))
-    print(len(spec))
-    print('\n')
-
-    print(mel)
-    print(type(mel))
-    print(len(mel))
-    print('\n')
-
-    print('img saved to: ', saved_to)
-
-    '''
-
-    dp = DataProcessor(filepath = filepath)
-
-    dp.load_data(rate = 1000, n_secs = 3)
+    dp = DataProcessor(filepath=FILEPATH)
+    dp.load_data(rate=1000, n_secs=3)
+    dp.save_images(PATH_TO_SAVE)
 
 
-    dp.write_to_file_test(dp.rate, dp.data)
+
+    #dp.write_to_file_test(dp.rate, dp.data)
