@@ -24,21 +24,26 @@ TEST_WAVS_DIRECTORY = Path.cwd().joinpath('data/test/wavs/')
 
 
 def get_beets_track_bpm_and_format_tags(beets_track_url):
-    """ Downloads metadata for a given track id from server and extracts bpm and format data.
+    """ Downloads metadata for a given track id from
+        server and extracts bpm and format data.
 
-    Args: beets_id (int or str) : numeric character correspoding to the track's id on server
+    Args: beets_id (int or str) : numeric character correspoding to
+                    the track's id on server
     Returns: format (str) : the file format of the track.
              bpm (int) : the int floored bpm of the track
     """
     logger.info('Getting beets track <%s> metadata…', beets_track_url)
     metadata = requests.get(beets_track_url).json()
     bpm = int(metadata.get('bpm', 0)) or None
+    genre = metadata.get('genre','')
     file_format = metadata.get('format', '').lower() or None
-    return bpm, file_format
+    return bpm, file_format, genre
 
 
 def download_beets_track_file(beets_track_url):
     """Downloads the beets track audio and returns a temporary file handle.
+    Args: beats_track_url (str) : url of track on server
+    Returns: file handle
     """
     logger.info('Downloading beets track <%s> audio file…', beets_track_url)
     f = TemporaryFile()
@@ -48,32 +53,52 @@ def download_beets_track_file(beets_track_url):
 
 
 def convert_mp3_to_wav_file(mp3_file):
-    """Converts downloaded mp3 to wav and deletes mp3."""
+    """Converts downloaded mp3 to wav."""
     logger.debug('Converting %s to WAV…', mp3_file)
     sound = AudioSegment.from_mp3(mp3_file)
+    sound = sound.set_channels(1)
     wav_file = TemporaryFile()
     sound.export(wav_file, format="wav")
     wav_file.seek(0)
     return wav_file
 
 
-# def download_all_beets_tracks():
-#     """Download all beets tracks with a non-zero BPM.
-#     """
-#     # see <http://beets.readthedocs.io/en/v1.4.5/reference/query.html#query-term-negation>
-#     beets_tracks_with_bpm = requests.get(BEETS_API_ROOT + 'query/^bpm:0').json()['results']
-#     for track in beets_tracks_with_bpm:
-#         beets_track_url = BEETS_API_ROOT + str(track['id'])
-#         bpm = track['bpm']
-#         file_format = ['format']
-#         audio_file = download_beets_track_file(beets_track_url)
-#         if file_format != 'WAV':
-#             if file_format == 'MP3':
-#                 wav_file = convert_mp3_to_wav_file(audio_file)
-#                 audio_file.close()
-#                 audio_file = wav_file   # switcheroo
-#         TEST_WAVS_DIRECTORY.joinpath('%s.wav', track['id']).write_bytes(audio_file.read())
-#         audio_file.close()
+def download_all_beets_tracks():
+    """Download all beets tracks with a non-zero BPM.
+    """
+    # see <http://beets.readthedocs.io/en/v1.4.5/reference/query.html#query-term-negation>
+    beets_tracks_with_bpm = requests.get(BEETS_API_ROOT + 'query/^bpm:0').json()['results']
+    for track in beets_tracks_with_bpm:
+        beets_track_url = BEETS_API_ROOT + str(track['id'])
+        bpm = track['bpm']
+        file_format = ['format']
+        audio_file = download_beets_track_file(beets_track_url)
+
+        if file_format == 'MP3':
+            wav_file = convert_mp3_to_wav_file(audio_file)
+            audio_file.close()
+            audio_file = wav_file   # switcheroo
+
+        TEST_WAVS_DIRECTORY.joinpath('%s.wav', track['id']).write_bytes(audio_file.read())
+        audio_file.close()
+
+def downnsample_wav(src, dst, inrate=44100, outrate=16000,
+                    inchannels=2, outchannels=1):
+
+    s_read = wave.open(src, 'r')
+    s_write = wave.open(dst, 'w')
+
+    n_frames = s_read.getnframes()
+    data = s_read.readframes(n_frames)
+
+    converted = audioop.ratecv(data, 2, inchannels, inrate, outrate, None)
+    if outchannels == 1:
+        converted = audioop.tomono(converted[0], 2, 1, 0)
+
+    s_write.setparams((outchannels, 2, outrate, 0, 'NONE', 'Uncompressed'))
+    s_write.writeframes(converted)
+    s_read.close()
+    s_write.close()
 
 
 def main(beets_ids):
@@ -87,11 +112,13 @@ def main(beets_ids):
     """
     for beets_id in beets_ids:
         beets_track_url = BEETS_API_ROOT + str(beets_id)
-        bpm, file_format = get_beets_track_bpm_and_format_tags(beets_track_url)
+        bpm, file_format, genre = get_beets_track_bpm_and_format_tags(beets_track_url)
         if not bpm or not file_format:
-            logger.warning('No BPM/file format for <%s> (bpm=%s, format=%s).', beets_track_url, bpm, file_format)
+            logger.warning('No BPM/file format for <%s> (bpm=%s, format=%s).',
+                            beets_track_url, bpm, file_format)
             continue
-        logger.debug('Beets track <%s> has bpm=%s, format=%s.', beets_track_url, bpm, file_format)
+        logger.debug('Beets track <%s> has bpm=%s, format=%s.',
+                      beets_track_url, bpm, file_format)
         if file_format == 'mp3':
             mp3_file = download_beets_track_file(beets_track_url)
             wav_file = convert_mp3_to_wav_file(mp3_file)
@@ -101,30 +128,10 @@ def main(beets_ids):
 
         # TODO: pass file handle directly to next program
         # copy WAV data to TEST_WAVS_DIRECTORY
-        TEST_WAVS_DIRECTORY.joinpath('%s.wav' % beets_id).write_bytes(wav_file.read())
-        wav_file.close()    # remember to close TemporaryFile for deletion
+        TEST_WAVS_DIRECTORY.joinpath('%s_%s_%s.wav' % (genre, beets_id, bpm)).write_bytes(wav_file.read())
+        wav_file.close() # remember to close TemporaryFile for deletion
 
-'''
-def wav_to_array(directory, Xdim):
-    """extract vector of length Xdim from wav file.
-    """
-    Xs = []
-    Ys = [124, 125, 122]
-
-    for filepath in os.listdir(directory):
-        print(directory+filepath)
-
-        sample_rate, data = wavfile.read(directory+filepath)
-        #mono = data.mean(axis=1)
-
-        print(sample_rate, data)
-
-        data = np.array(data[10000:10000+Xdim]).astype(np.float32)
-        data = normalise(data)
-        Xs.append(data)
-
-    return Xs, Ys
-'''
 
 if __name__ == '__main__':
-    main([1, 2, 3, 4, 5])
+    # download the first 50 tracks!
+    main(list(range(1,51)))

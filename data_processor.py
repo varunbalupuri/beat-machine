@@ -11,7 +11,9 @@ import logging
 import os
 import shutil
 import wave
+import random
 
+# logging configuration
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 
 
@@ -54,7 +56,7 @@ class DataProcessor(object):
         self.start_freq = start_freq
         self.end_freq = end_freq
         self.samplerate = samplerate
-        self.logger = logging.getLogger(__name__) or logger
+        self.logger = logger or logging.getLogger(__name__)
 
     def __getitem__(self, index):
         return self.data[index]
@@ -71,9 +73,23 @@ class DataProcessor(object):
         """
         return self.filepath == other.filepath
 
+    @property
+    def dimensions(self):
+        """dimensions of array
+        """
+        return (len(self.spectrogram), len(self.spectrogram[0]))
+
+
     ###############################
     #  loading and augmentation   #
     ###############################
+
+    def _get_labels(self):
+        """ Splits based on filename and stores bpm data, genre data
+        """
+
+
+
 
     def _downsample(self, out_rate):
         """ Downsamples data at self.filepath to have rate, `outrate`
@@ -82,7 +98,7 @@ class DataProcessor(object):
         Args:
             out_rate (int) : the desired downsampled rate
         """
-        temp_filepath = 'downsample_{}_{}'.format(out_rate, self.filepath)
+        temp_filepath = self.filepath.rstrip('.wav')+'_downsample_'+str(out_rate)+'.wav'
 
         in_wav = wave.open(self.filepath)
         self.logger.info('original rate is : %s', in_wav.getframerate())
@@ -119,7 +135,23 @@ class DataProcessor(object):
 
         return out_rate
 
-    def load_data(self, rate, n_secs, req_buffer=5):
+    def load_data(self, n_secs, req_buffer=5):
+        """Loads a n_sec sample of the file
+        into instance attribtes with no downsampling
+        Args:
+            n_secs (float) : The number of seconds to sample from any given file.
+        Returns:
+            None
+        """
+        self.rate, data = wavfile.read(self.filepath)
+        buffer_zone = self.rate*(n_secs+req_buffer)
+        random_start = random.randint(buffer_zone, len(data)-buffer_zone)
+        self.logger.info('random_start is {}'.format(random_start))
+        data = data[random_start: random_start+self.rate*n_secs]
+        self.logger.info('data is {}'.format(data))
+        self.data = data
+
+    def load_data_with_downsample(self, rate, n_secs, req_buffer=5):
         """Loads a n_sec sample of the file
         into instance attribtes, downsamples and then
         loads into self.rate and self.data
@@ -132,16 +164,16 @@ class DataProcessor(object):
             None
         """
         new_rate = self._downsample(rate)
-        self.logger.info('downsampling {} to {}'.format(self.filepath,new_rate))
+        self.logger.info('downsampling {} to {}'.format(self.filepath, new_rate))
         self.rate, data = wavfile.read(self.filepath)
         self.logger.info('rate read as: {}'.format(self.rate))
-
+        self.logger.info('len data is {}'.format(len(data)))
         # should not be too close to start/end of song
         buffer_zone = self.rate*(n_secs+req_buffer)
         random_start = random.randint(buffer_zone, len(data)-buffer_zone)
-
-        data = data[random_start: self.rate*n_secs]
-
+        self.logger.info('random_start is {}'.format(random_start))
+        data = data[random_start: random_start + self.rate*n_secs]
+        self.logger.info('data is {}'.format(data))
         self.data = data
 
     def _add_noise(self, mu, sigma):
@@ -273,7 +305,7 @@ class DataProcessor(object):
                           step=step_size, real=False, compute_onesided=True))
 
         if log:
-            specgram /= specgram.max()  # volume normalize to max 1
+            specgram /= specgram.max()  # normalize to max 1
             specgram = np.log10(specgram)
             # set anything less than the threshold as the threshold
             specgram[specgram < -thresh] = -thresh
@@ -357,20 +389,22 @@ class DataProcessor(object):
             saved filepath locations
         """
         if path_to_save is None:
+            self.logger.warning('Must provide path_to_save')
             raise ValueError('path_to_save must not be None')
 
         file_suffix = self.filepath.split('/')[-1].split('.')[0]
         spectrogram_path = path_to_save + file_suffix + '_spectrogram.png'
         mel_spectrogram_path = path_to_save + file_suffix + '_mel_spectrogram.png'
+        self.logger.info('saving imgs to: {}, {}'.format(spectrogram_path,
+                                                         mel_spectrogram_path))
 
         fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(20, 4))
         cax = ax.matshow(np.transpose(self.spectrogram),
                          interpolation='nearest',
                          aspect='auto',
-                         cmap=plt.cm.afmhot,
+                         cmap=plt.cm.Greys,
                          origin='lower'
                          )
-        fig.colorbar(cax)
         plt.title('Original Spectrogram')
         plt.savefig(spectrogram_path)
 
@@ -380,10 +414,9 @@ class DataProcessor(object):
         cax = ax.matshow(self.mel_spectrogram,
                          interpolation='nearest',
                          aspect='auto',
-                         cmap=plt.cm.afmhot,
+                         cmap=plt.cm.Greys,
                          origin='lower'
                          )
-        fig.colorbar(cax)
         plt.title('mel Spectrogram')
         plt.savefig(mel_spectrogram_path)
 
@@ -397,13 +430,16 @@ class DataProcessor(object):
 
 if __name__ == '__main__':
 
-    FILEPATH = '/home/vaz/projects/beat-machine/data/test/wavs/30_132.wav'
+    FILEPATH = '/home/vaz/projects/beat-machine/data/test/wavs/48_127.wav'
     PATH_TO_SAVE = '/home/vaz/projects/beat-machine/data/test/img/'
 
 
     dp = DataProcessor(filepath=FILEPATH)
-    dp.load_data(rate=1000, n_secs=3)
+    dp.load_data(n_secs=3)
     dp.save_images(PATH_TO_SAVE)
+
+    assert len(dp.spectrogram) > 1000
+    assert dp.data is not None
 
 
 
