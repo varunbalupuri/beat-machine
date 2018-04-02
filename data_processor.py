@@ -84,13 +84,6 @@ class DataProcessor(object):
     #  loading and augmentation   #
     ###############################
 
-    def _get_labels(self):
-        """ Splits based on filename and stores bpm data, genre data
-        """
-
-
-
-
     def _downsample(self, out_rate):
         """ Downsamples data at self.filepath to have rate, `outrate`
         and writes data to to file with new downsampled rate. Neccesary
@@ -440,6 +433,8 @@ if __name__ == '__main__':
 
     assert len(dp.spectrogram) > 1000
     assert dp.data is not None
+
+
 
 
 

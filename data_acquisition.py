@@ -19,8 +19,35 @@ stdout_log_handler = logging.StreamHandler(sys.stdout)
 stdout_log_handler.setLevel(logging.DEBUG)
 logger.addHandler(stdout_log_handler)
 
-BEETS_API_ROOT = 'http://beets.westerndecadence.com/item/'
+BEETS_API_ROOT = 'http://captain-hammer.local:8337/item/'
 TEST_WAVS_DIRECTORY = Path.cwd().joinpath('data/test/wavs/')
+
+# bpm acceptable range
+LOWER_BOUND = 120
+UPPER_BOUND = 130
+
+
+def genre_is_of_interest(genre):
+    """
+    Args:
+        genre (str): Description
+    """
+    logger.info('genre: {}'.format(genre))
+
+    for g in ['techno', 'house', 'dance', 'tech']:
+        if g in genre:
+            return True
+
+    return False
+
+
+def bpm_is_in_range(bpm, lower_bound, upper_bound):
+    """ Whether bpm is in acceptable range
+    """
+
+    if lower_bound <= bpm <= upper_bound:
+        return True
+    return False
 
 
 def get_beets_track_bpm_and_format_tags(beets_track_url):
@@ -35,7 +62,15 @@ def get_beets_track_bpm_and_format_tags(beets_track_url):
     logger.info('Getting beets track <%s> metadata…', beets_track_url)
     metadata = requests.get(beets_track_url).json()
     bpm = int(metadata.get('bpm', 0)) or None
-    genre = metadata.get('genre','')
+    genre = metadata.get('genre').lower()
+    if genre is None:
+        return None
+    logger.info('genre: {}'.format(genre.lower()))
+    # to do: flesh out
+    '''
+    if not is_of_interest(genre):
+        return None
+    '''
     file_format = metadata.get('format', '').lower() or None
     return bpm, file_format, genre
 
@@ -82,6 +117,7 @@ def download_all_beets_tracks():
         TEST_WAVS_DIRECTORY.joinpath('%s.wav', track['id']).write_bytes(audio_file.read())
         audio_file.close()
 
+
 def downnsample_wav(src, dst, inrate=44100, outrate=16000,
                     inchannels=2, outchannels=1):
 
@@ -108,17 +144,31 @@ def main(beets_ids):
     If bpm tag does not exist/is zero, track is not downloaded.
     If track is not in WAV format, convert to it first.
 
+
+
+    dawdwc
+
     Args (list[str]) : list of id's to download from server
     """
+    counter = 0
     for beets_id in beets_ids:
+        counter += 1
         beets_track_url = BEETS_API_ROOT + str(beets_id)
         bpm, file_format, genre = get_beets_track_bpm_and_format_tags(beets_track_url)
         if not bpm or not file_format:
             logger.warning('No BPM/file format for <%s> (bpm=%s, format=%s).',
                             beets_track_url, bpm, file_format)
             continue
+
+        if not genre_is_of_interest(genre):
+            continue
+
+        if not bpm_is_in_range(bpm, LOWER_BOUND, UPPER_BOUND):
+            continue
+
         logger.debug('Beets track <%s> has bpm=%s, format=%s.',
                       beets_track_url, bpm, file_format)
+
         if file_format == 'mp3':
             mp3_file = download_beets_track_file(beets_track_url)
             wav_file = convert_mp3_to_wav_file(mp3_file)
@@ -131,7 +181,9 @@ def main(beets_ids):
         TEST_WAVS_DIRECTORY.joinpath('%s_%s_%s.wav' % (genre, beets_id, bpm)).write_bytes(wav_file.read())
         wav_file.close() # remember to close TemporaryFile for deletion
 
+        print(counter, beets_id)
+
+
 
 if __name__ == '__main__':
-    # download the first 50 tracks!
-    main(list(range(1,51)))
+    main(list(range(1, 1001)))
