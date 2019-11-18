@@ -1,5 +1,5 @@
 scipy==0.19.1
-requests==2.18.4
+requests==2.20.0
 matplotlib==2.1.1
 numpy==1.14.0
 pydub==0.20.0
